@@ -1,82 +1,65 @@
+# ising.py
+# ------------------------------
 import numpy as np
-# Import NumPy under the alias `np`, giving us fast, vectorized arrays.
+from numba import njit  # ADDED: import Numba for JIT compilation
+
+@njit
+def _sweep_jit(spins, T, J):
+    """
+    JIT-compiled Monte Carlo sweep: loops at machine speed.
+    """  # ADDED: escape Python overhead by compiling the inner loop
+    L = spins.shape[0]
+    for _ in range(L * L):
+        i = np.random.randint(0, L)
+        j = np.random.randint(0, L)
+        s = spins[i, j]
+        # Periodic boundary neighbors
+        nb = (spins[(i - 1) % L, j] +
+              spins[(i + 1) % L, j] +
+              spins[i, (j - 1) % L] +
+              spins[i, (j + 1) % L])
+        dE = 2 * J * s * nb
+        # Use NumPy's rand inside JIT for speed
+        if dE <= 0 or np.random.rand() < np.exp(-dE / T):
+            spins[i, j] = -s
+    return spins
 
 class IsingModel:
     """
-    A 2D Ising model on an L×L grid at temperature T.
+    A 2D Ising model on an L×L grid at temperature T, with adjustable coupling J.
     Implements the Metropolis algorithm for Monte Carlo sampling.
     """
 
-    def __init__(self, size, temperature):
+    def __init__(self, size, temperature, coupling=1.0):  # CHANGED: added `coupling` parameter
         """
-        Constructor runs when you call IsingModel(size, temperature).
-
         Args:
-            size (int): Number of rows/columns (grid is size×size).
-            temperature (float): Thermal noise level; higher T → more random flips.
+            size (int): Grid dimension L.
+            temperature (float): System temperature T.
+            coupling (float): Interaction strength J (default=1.0).  # ADDED
         """
         self.L = size
-        # Save the grid dimension so other methods know how many spins exist.
-
         self.T = temperature
-        # Save the temperature; used in the Boltzmann acceptance test.
-
-        # Create an L×L array of spins, each randomly +1 or -1:
-        self.spins = np.random.choice(
-            [-1, 1],       # possible spin values (down, up)
-            (self.L, self.L)  # shape of the grid
-        )
+        self.J = coupling  # ADDED: store interaction strength
+        # Initialize spins randomly to +1 or -1 (unchanged)
+        self.spins = np.random.choice([-1, 1], size=(self.L, self.L))
 
     def _energy_change(self, i, j):
         """
-        Calculate ΔE if we flip the spin at position (i, j).
-
-        Uses periodic boundaries so edges wrap around like a torus.
-
-        Args:
-            i (int): Row index of the spin.
-            j (int): Column index of the spin.
-
-        Returns:
-            float: ΔE = E_new − E_old for flipping that spin.
+        Compute ΔE for flipping spin at (i,j):
+        ΔE = 2 * J * s_ij * (sum of four neighbors).
         """
-        spin = self.spins[i, j]
-        # Current spin value (+1 or -1).
-
-        # Sum four neighbors (down, up, right, left), using modulo for wrap:
+        s = self.spins[i, j]
         neighbors = (
-            self.spins[(i + 1) % self.L, j] +
             self.spins[(i - 1) % self.L, j] +
-            self.spins[i, (j + 1) % self.L] +
-            self.spins[i, (j - 1) % self.L]
+            self.spins[(i + 1) % self.L, j] +
+            self.spins[i, (j - 1) % self.L] +
+            self.spins[i, (j + 1) % self.L]
         )
-
-        # ΔE formula for Ising with coupling J = 1:
-        # ΔE = 2 * J * spin * sum_of_neighbor_spins
-        delta_E = 2 * spin * neighbors
-        return delta_E
+        return 2 * self.J * s * neighbors  # CHANGED: multiply by self.J
 
     def metropolis_step(self):
         """
-        Perform one full sweep (L² attempts) of the Metropolis algorithm:
-
-        For each attempt:
-         1. Pick a random spin.
-         2. Compute ΔE if flipped.
-         3. If ΔE ≤ 0 → accept flip.
-         4. Else accept with probability exp(−ΔE / T).
+        Perform one Monte Carlo sweep (L^2 flip attempts).  # unchanged
         """
-        for _ in range(self.L * self.L):
-            # 1) Choose a random site (i, j):
-            i = np.random.randint(0, self.L)
-            j = np.random.randint(0, self.L)
-
-            # 2) Compute the energy change for flipping it:
-            delta_E = self._energy_change(i, j)
-
-            # 3) Decide to flip:
-            #    - Always if ΔE ≤ 0 (energy-lowering).
-            #    - Otherwise with probability exp(−ΔE / T).
-            if delta_E <= 0 or np.random.rand() < np.exp(-delta_E / self.T):
-                self.spins[i, j] *= -1
-                # Multiply by -1 flips +1 ↔ -1.
+        # CHANGED: delegate to JIT-compiled sweep function for speed
+        self.spins = _sweep_jit(self.spins, self.T, self.J)
