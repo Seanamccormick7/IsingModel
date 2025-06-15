@@ -15,24 +15,23 @@ def simulate(L_values, temps, n_eq, n_samp):
     Run MC across lattice sizes; compute heat capacity & Binder cumulant.
     """
     results = {}
-    for L in L_values:  # for each size
-        print(f"\n→ Starting simulations for L={L}")  # ADDED: clear newline per-L
+    for L in L_values:
+        print(f"\n→ Starting simulations for L={L}")  # ADDED
         heat_caps, mags, binders = [], [], []
         for idx, T in enumerate(temps):
-            # THROTTLED: print every 5 steps or the last step
-            if (idx + 1) % 5 == 0 or idx == len(temps) - 1:
-                progress = f"→ L={L}, T={T:.2f} ({idx+1}/{len(temps)})"
-                print(progress, end="\r")  # ADJUSTED: removed flush for fewer prints
+            progress = f"→ L={L}, T={T:.2f} ({idx+1}/{len(temps)})"
+            # CHANGED: print at first step, every 5th, and last for each L
+            if idx == 0 or (idx + 1) % 5 == 0 or idx == len(temps) - 1:
+                print(progress, end="\r")
 
             model = IsingModel(L, T)
-            # Equilibration
             for _ in range(n_eq):
-                model.metropolis_step()  # CHANGED: uses JIT-compiled sweep inside
-            # Sampling
+                model.metropolis_step()  # uses JIT under the hood
+
             E_acc = E2_acc = 0.0
             M_acc = M2_acc = M4_acc = 0.0
             for _ in range(n_samp):
-                model.metropolis_step()  # CHANGED: JIT jump drastically speeds updates
+                model.metropolis_step()
                 E = total_energy(model)
                 m = magnetization(model)
                 E_acc += E
@@ -40,17 +39,19 @@ def simulate(L_values, temps, n_eq, n_samp):
                 M_acc += abs(m)
                 M2_acc += m * m
                 M4_acc += m ** 4
-            # Compute observables
+
             E_mean = E_acc / n_samp
             E2_mean = E2_acc / n_samp
             C = (E2_mean - E_mean**2) / (T**2 * L * L)
             M2_mean = M2_acc / n_samp
             M4_mean = M4_acc / n_samp
             U = 1 - M4_mean / (3 * M2_mean**2)
+
             heat_caps.append(C)
             mags.append(M_acc / (n_samp * L * L))
             binders.append(U)
-        print()  # ADDED: newline after finishing all temperatures for this L
+
+        print()  # ADDED: newline after each L
         results[L] = {
             'heat_capacity': np.array(heat_caps),
             'magnetization': np.array(mags),
@@ -60,18 +61,17 @@ def simulate(L_values, temps, n_eq, n_samp):
 
 
 if __name__ == '__main__':
-    print("▶ Starting simulation…")  # ── ADDED: beginning notice
-    L_values = [32, 48, 64]  # sizes for finite-size scaling
+    print("▶ Starting simulation…")  # ── ADDED
+    L_values = [32, 48, 64]
     temps = np.linspace(1.5, 3.5, 21)
     n_eq, n_samp = 1000, 5000
 
-    t0 = time.time()  # ── ADDED: start time
+    t0 = time.time()  # ── ADDED
     results = simulate(L_values, temps, n_eq, n_samp)
-    elapsed = time.time() - t0  # ── ADDED: elapsed time
+    elapsed = time.time() - t0  # ── ADDED
 
-    print(f"\n✅ Simulation finished in {elapsed:.2f} s; now plotting.")  # ── ADDED: summary timing
+    print(f"\n✅ Simulation finished in {elapsed:.2f} s; now plotting.")  # ── ADDED
 
-    # Save data
     np.savez(
         'ising_results.npz',
         temps=temps,
@@ -79,7 +79,6 @@ if __name__ == '__main__':
         **{f'U_L{L}': results[L]['binder'] for L in L_values}
     )
 
-    # Plot heat capacity
     plt.figure()
     for L in L_values:
         plt.plot(temps, results[L]['heat_capacity'], marker='o', label=f"L={L}")
@@ -89,7 +88,6 @@ if __name__ == '__main__':
     plt.legend()
     plt.show()
 
-    # Plot Binder cumulant
     plt.figure()
     for L in L_values:
         plt.plot(temps, results[L]['binder'], marker='o', label=f"L={L}")
@@ -99,4 +97,4 @@ if __name__ == '__main__':
     plt.legend()
     plt.show()
 
-    print(" Done! Energy and Binder cumulant plots displayed.")  # ── ADDED: final confirmation
+    print(" Done! Energy and Binder cumulant plots displayed.")  # ── ADDED
