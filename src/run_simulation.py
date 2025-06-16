@@ -10,16 +10,17 @@ from ising import IsingModel
 from observables import total_energy, magnetization
 
 
-def simulate(L_values, temps, n_eq, n_samp):
+def simulate(L_values, temps, n_eq, n_samp, sweeps_between_samples=10, init='auto'):
     """
     Run MC across lattice sizes; compute heat capacity & Binder cumulant.
     """
     results = {}
     for L in L_values:
         print(f"\n→ Starting simulations for L={L}")  # ADDED
+        spins = None
         heat_caps, mags, binders = [], [], []
         for idx, T in enumerate(temps):
-            progress = f"→ L={L}, T={T:.2f} ({idx+1}/{len(temps)})"
+            progress = f"→ L={L}, T={T:.2f} ({idx + 1}/{len(temps)})"
             # CHANGED: print at first step, every 5th, and last for each L
             if idx == 0 or (idx + 1) % 5 == 0 or idx == len(temps) - 1:
                 print(progress, end="\r")
@@ -31,7 +32,10 @@ def simulate(L_values, temps, n_eq, n_samp):
             E_acc = E2_acc = 0.0
             M_acc = M2_acc = M4_acc = 0.0
             for _ in range(n_samp):
-                model.metropolis_step()
+                # --- SOLUTION: Perform multiple sweeps between samples to decorrelate them ---
+                for _ in range(sweeps_between_samples):
+                    model.metropolis_step()
+
                 E = total_energy(model)
                 m = magnetization(model)
                 E_acc += E
@@ -42,10 +46,10 @@ def simulate(L_values, temps, n_eq, n_samp):
 
             E_mean = E_acc / n_samp
             E2_mean = E2_acc / n_samp
-            C = (E2_mean - E_mean**2) / (T**2 * L * L)
+            C = (E2_mean - E_mean ** 2) / (T ** 2 * L * L)
             M2_mean = M2_acc / n_samp
             M4_mean = M4_acc / n_samp
-            U = 1 - M4_mean / (3 * M2_mean**2)
+            U = 1 - M4_mean / (3 * M2_mean ** 2)
 
             heat_caps.append(C)
             mags.append(M_acc / (n_samp * L * L))
@@ -64,10 +68,15 @@ if __name__ == '__main__':
     print("▶ Starting simulation…")  # ── ADDED
     L_values = [32, 48, 64]
     temps = np.linspace(1.5, 3.5, 21)
-    n_eq, n_samp = 1000, 5000
+
+    # --- SOLUTION: Increase equilibration and sampling sweeps ---
+    # Original values were 1000, 5000.
+    # More sweeps are needed for equilibration at low T and for better statistics.
+    n_eq, n_samp = 20000, 10000
 
     t0 = time.time()  # ── ADDED
-    results = simulate(L_values, temps, n_eq, n_samp)
+    # --- SOLUTION: Pass sweeps_between_samples to the function ---
+    results = simulate(L_values, temps, n_eq, n_samp, sweeps_between_samples=10)
     elapsed = time.time() - t0  # ── ADDED
 
     print(f"\n✅ Simulation finished in {elapsed:.2f} s; now plotting.")  # ── ADDED
